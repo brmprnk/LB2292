@@ -36,8 +36,8 @@ The resulting individual output files are:
 - `data/processed/clinical.csv`
 - `data/processed/cnv.pkl`
 - `data/processed/expression.pkl`
-- `data/processed/mirna.pkl` (TODO)
 - `data/processed/meth.pkl`
+- `data/processed/mirna.pkl` (TODO)
 
 From these files, there are ... samples that have all the data types available (TODO).
 

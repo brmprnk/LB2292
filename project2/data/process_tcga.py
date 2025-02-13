@@ -356,7 +356,7 @@ if __name__ == "__main__":
     files_meth = get_files_with_ext(folder="meth", extension="txt", exclude=["annotations"])
     df_meth = combine_files_methylation(folder="meth", files=files_meth, sample_sheet=samplesheet_meth)
     print("Saving methylation data...")
-    with open(f"{DATA_DIR}/processed/expression.pkl", "wb") as f:
+    with open(f"{DATA_DIR}/processed/meth.pkl", "wb") as f:
         pickle.dump(df_meth, f)
     df_meth_samples = df_meth["patient_id"].copy()
     del df_meth  # Free up memory
