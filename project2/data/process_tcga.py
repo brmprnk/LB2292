@@ -300,55 +300,53 @@ if __name__ == "__main__":
 
 
     # Clinical data
-    print("Processing clinical data...")
-    clinical_files = get_files_with_ext(folder="clinical", extension="xml")
-    df_clinical = combine_files_clinical(clinical_files=clinical_files)
-    print("Saving clinical data...")
-    df_clinical.to_csv(f"{DATA_DIR}/processed/metadata.csv", index=False)
+    out_file_clinical = f"{DATA_DIR}/processed/metadata.csv"
+    if os.path.exists(out_file_clinical):
+        print("Clinical data already processed, loading...")
+        df_clinical = pd.read_csv(out_file_clinical, low_memory=False)
+    else:
+        print("Processing clinical data...")
+        clinical_files = get_files_with_ext(folder="clinical", extension="xml")
+        df_clinical = combine_files_clinical(clinical_files=clinical_files)
+        print("Saving clinical data...")
+        df_clinical.to_csv(f"{DATA_DIR}/processed/metadata.csv", index=False)
     print(f"Done. Loaded clinical data for {len(df_clinical)} patients.")
     df_clinical_index = df_clinical["bcr_patient_barcode"].copy().values
-    del df_clinical  # Free up memory
-    print("metadata IDs:", df_clinical_index)
 
     # Expression
-    print("\nProcessing expression data...")
-    samplesheet_expression = load_samplesheet(filename=f"{DATA_DIR}/manifests/gdc_sample_sheet_tcga_open_expression.tsv")
-    files_expression = get_files_with_ext(folder="expression", extension="tsv")
-    df_ge = combine_files_expression(folder="expression", files=files_expression, sample_sheet=samplesheet_expression)
-    print("Saving expression data...")
-    with open(f"{DATA_DIR}/processed/expression.pkl", "wb") as f:
-        pickle.dump(df_ge, f)  
+    out_file_expression = f"{DATA_DIR}/processed/expression.pkl"
+    if os.path.exists(out_file_expression):
+        print("Expression data already processed, loading...")
+        with open(out_file_expression, "rb") as f:
+            df_ge = pickle.load(f)
+    else:
+        print("\nProcessing expression data...")
+        samplesheet_expression = load_samplesheet(filename=f"{DATA_DIR}/manifests/gdc_sample_sheet_tcga_open_expression.tsv")
+        files_expression = get_files_with_ext(folder="expression", extension="tsv")
+        df_ge = combine_files_expression(folder="expression", files=files_expression, sample_sheet=samplesheet_expression)
+        print("Saving expression data...")
+        with open(out_file_expression, "wb") as f:
+            pickle.dump(df_ge, f)  
     print(f"Done. Loaded expression data for {len(df_ge)} samples.")
     df_ge_samples = df_ge["patient_id"].unique()
     del df_ge  # Free up memory
-    
-    print("metadata:", df_clinical_index)
-    print("GE:", df_ge_samples)
         
-    overlap = set(df_ge_samples).intersection(set(df_clinical_index))
-    print(f"And metadata is available for {len(overlap)}/{len(df_ge_samples)} of these samples.")
-
     # CNV
-    print("\nProcessing CNV data...")
-    samplesheet_cnv = load_samplesheet(filename=f"{DATA_DIR}/manifests/gdc_sample_sheet_tcga_open_gene-level-cn_ascat3.tsv")
-    df_cnv = combine_files_cnv(folder="cnv", extension="tsv", exclude=["annotation"], sample_sheet=samplesheet_cnv)
-    print("Saving CNV data...")
-    with open(f"{DATA_DIR}/processed/cnv.pkl", "wb") as f:
-        pickle.dump(df_cnv, f)
+    out_file_cnv = f"{DATA_DIR}/processed/cnv.pkl"
+    if os.path.exists(out_file_cnv):
+        print("CNV data already processed, loading...")
+        with open(out_file_cnv, "rb") as f:
+            df_cnv = pickle.load(f)
+    else:
+        print("\nProcessing CNV data...")
+        samplesheet_cnv = load_samplesheet(filename=f"{DATA_DIR}/manifests/gdc_sample_sheet_tcga_open_gene-level-cn_ascat3.tsv")
+        df_cnv = combine_files_cnv(folder="cnv", extension="tsv", exclude=["annotation"], sample_sheet=samplesheet_cnv)
+        print("Saving CNV data...")
+        with open(out_file_cnv, "wb") as f:
+            pickle.dump(df_cnv, f)
     print(f"Done. Loaded CNV data for {len(df_cnv)} samples.")
     df_cnv_samples = df_cnv["patient_id"].unique()
     del df_cnv  # Free up memory
-
-    print("metadata:", df_clinical_index)
-    print("CNV:", df_cnv_samples)
-
-    # TODO: patient_ids column is weird here, because it contains two IDs....
-    # This is actually already in the sample sheet, so does that mean each file contains two samples?
-    # The case ID is always the same, but the sample ID is different...
-    overlap = set(df_cnv_samples).intersection(set(df_clinical_index))
-    print(f"And metadata is available for {len(overlap)}/{len(df_cnv_samples)} of these samples.")
-    overlap_ge_cnv = set(df_ge_samples).intersection(set(df_cnv_samples))
-    print(f"Also, the expression data has {len(overlap_ge_cnv)} samples in common with the CNV data.")
 
     # Methylation
     print("\nProcessing methylation data...")
