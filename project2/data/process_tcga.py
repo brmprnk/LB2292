@@ -142,42 +142,54 @@ def combine_files_expression(folder: str, files: list[tuple], sample_sheet: pd.D
     return df
 
 
-def combine_files_methylation(folder: str, files: list[tuple], sample_sheet: pd.DataFrame):
+def combine_files_methylation(folder: str, files: list[tuple], sample_sheet: pd.DataFrame, df_map: pd.DataFrame, max_dist: int = 2000):
+
+    # first, we filter the df_map to only include the probes that are within max_dist of a TSS
+    df_map["distToTSS"] = df_map["distToTSS"].astype(int)
+    df_map = df_map[df_map["distToTSS"] <= max_dist]
+
+    map_probe_to_gene = df_map.set_index("probeID")["geneName"].to_dict()
+
+    # then we make a list of all the unique genes, which we will aggregate the probes over
+    genes = df_map["geneName"].unique()
+    print(f"Found {len(genes)} unique genes within {max_dist} bp of a TSS.")
 
     rows = []
-
     for uuid, file in tqdm(files):
 
-        # case_id = sample_sheet[sample_sheet["File Name"] == file]["Case ID"].values[0]
-        try:
-            case_id, sample_id, sample_type = \
-                sample_sheet[sample_sheet["File Name"] == file][["Case ID", "Sample ID", "Sample Type"]].values[0]
-        except:
-            print(f"Error with file {file}, uuid {uuid}")
-            exit(-1)
-
+        case_id, sample_id, sample_type = \
+            sample_sheet[sample_sheet["File Name"] == file][["Case ID", "Sample ID", "Sample Type"]].values[0]
+        
         # there are no headers in the files
         df = pd.read_csv(f"project2/data/raw/{folder}/{uuid}/{file}", sep="\t", header=None, index_col=0)
+        # df is a single column, with index the probe id, and values the beta values.
+        # we use df_map to map the probe IDs to gene IDs
 
-        # unfortunately the indices are not the same for all files
-        # so we store both the values and the indices
+        # first we get only the probes that are in range of a TSS
+        df_filtered = df[df.index.isin(set(df_map["probeID"].values))].copy()
 
-        rows.append((case_id, sample_id, sample_type, df[1]))
+        # next, we add the gene names to the df_filtered
+        df_filtered["geneName"] = df_filtered.index.to_series().map(map_probe_to_gene)
 
-    # Now we collect all the unique indices, and sort them
-    indices = set()
-    for _, _, _, row in rows:
-        indices.update(row.index)
-    indices = sorted(list(indices))
+        # presort by geneName, so we can use groupby
+        df_filtered.sort_values("geneName", inplace=True)
 
-    # Now we create the matrix
-    x = np.zeros((len(rows), len(indices)))
-    for i, (_, _, _, row) in enumerate(tqdm(rows)):
-        x[i, :] = row.reindex(indices).values
+        df_accum = df_filtered.groupby("geneName").sum()
+
+        # and now we have to arrange the genes in the order given by the "genes" array,
+        # and fill in the missing ones with 0
+        gene_accum_meths = df_accum.reindex(genes).fillna(0).values
+
+        rows.append((case_id, sample_id, sample_type, gene_accum_meths))
+
+    x = np.array([
+        np.array(row[3])
+        for row in rows
+    ]).reshape(len(rows), len(genes))
 
     # make a df, with the expression values as columns and the rows as samples
     # the index is the sample_id, the columns are the gene_id
-    df = pd.DataFrame(x, columns=indices, index=[row[1] for row in rows])
+    df = pd.DataFrame(x, columns=genes, index=[row[1] for row in rows])
     df.index.name = "sample_id"
     df.insert(0, "patient_id", [row[0] for row in rows])  # Equivalent to bcr_patient_barcode in clinical data
     df.insert(1, "sample_type", [row[2] for row in rows])
@@ -313,63 +325,59 @@ if __name__ == "__main__":
     print(f"Done. Loaded clinical data for {len(df_clinical)} patients.")
     df_clinical_index = df_clinical["bcr_patient_barcode"].copy().values
 
-    # Expression
-    out_file_expression = f"{DATA_DIR}/processed/expression.pkl"
-    if os.path.exists(out_file_expression):
-        print("Expression data already processed, loading...")
-        with open(out_file_expression, "rb") as f:
-            df_ge = pickle.load(f)
-    else:
-        print("\nProcessing expression data...")
-        samplesheet_expression = load_samplesheet(filename=f"{DATA_DIR}/manifests/gdc_sample_sheet_tcga_open_expression.tsv")
-        files_expression = get_files_with_ext(folder="expression", extension="tsv")
-        df_ge = combine_files_expression(folder="expression", files=files_expression, sample_sheet=samplesheet_expression)
-        print("Saving expression data...")
-        with open(out_file_expression, "wb") as f:
-            pickle.dump(df_ge, f)  
-    print(f"Done. Loaded expression data for {len(df_ge)} samples.")
-    df_ge_samples = df_ge["patient_id"].unique()
-    del df_ge  # Free up memory
+    # # Expression
+    # out_file_expression = f"{DATA_DIR}/processed/expression.pkl"
+    # if os.path.exists(out_file_expression):
+    #     print("Expression data already processed, loading...")
+    #     with open(out_file_expression, "rb") as f:
+    #         df_ge = pickle.load(f)
+    # else:
+    #     print("\nProcessing expression data...")
+    #     samplesheet_expression = load_samplesheet(filename=f"{DATA_DIR}/manifests/gdc_sample_sheet_tcga_open_expression.tsv")
+    #     files_expression = get_files_with_ext(folder="expression", extension="tsv")
+    #     df_ge = combine_files_expression(folder="expression", files=files_expression, sample_sheet=samplesheet_expression)
+    #     print("Saving expression data...")
+    #     with open(out_file_expression, "wb") as f:
+    #         pickle.dump(df_ge, f)  
+    # print(f"Done. Loaded expression data for {len(df_ge)} samples.")
+    # df_ge_samples = df_ge["patient_id"].unique()
+    # del df_ge  # Free up memory
         
-    # CNV
-    out_file_cnv = f"{DATA_DIR}/processed/cnv.pkl"
-    if os.path.exists(out_file_cnv):
-        print("CNV data already processed, loading...")
-        with open(out_file_cnv, "rb") as f:
-            df_cnv = pickle.load(f)
-    else:
-        print("\nProcessing CNV data...")
-        samplesheet_cnv = load_samplesheet(filename=f"{DATA_DIR}/manifests/gdc_sample_sheet_tcga_open_gene-level-cn_ascat3.tsv")
-        df_cnv = combine_files_cnv(folder="cnv", extension="tsv", exclude=["annotation"], sample_sheet=samplesheet_cnv)
-        print("Saving CNV data...")
-        with open(out_file_cnv, "wb") as f:
-            pickle.dump(df_cnv, f)
-    print(f"Done. Loaded CNV data for {len(df_cnv)} samples.")
-    df_cnv_samples = df_cnv["patient_id"].unique()
-    del df_cnv  # Free up memory
+    # # CNV
+    # out_file_cnv = f"{DATA_DIR}/processed/cnv.pkl"
+    # if os.path.exists(out_file_cnv):
+    #     print("CNV data already processed, loading...")
+    #     with open(out_file_cnv, "rb") as f:
+    #         df_cnv = pickle.load(f)
+    # else:
+    #     print("\nProcessing CNV data...")
+    #     samplesheet_cnv = load_samplesheet(filename=f"{DATA_DIR}/manifests/gdc_sample_sheet_tcga_open_gene-level-cn_ascat3.tsv")
+    #     df_cnv = combine_files_cnv(folder="cnv", extension="tsv", exclude=["annotation"], sample_sheet=samplesheet_cnv)
+    #     print("Saving CNV data...")
+    #     with open(out_file_cnv, "wb") as f:
+    #         pickle.dump(df_cnv, f)
+    # print(f"Done. Loaded CNV data for {len(df_cnv)} samples.")
+    # df_cnv_samples = df_cnv["patient_id"].unique()
+    # del df_cnv  # Free up memory
 
     # Methylation
     print("\nProcessing methylation data...")
     samplesheet_meth = load_samplesheet(filename=f"{DATA_DIR}/manifests/gdc_sample_sheet_tcga_open_meth.tsv")
     files_meth = get_files_with_ext(folder="meth", extension="txt", exclude=["annotations"])
-    df_meth = combine_files_methylation(folder="meth", files=files_meth, sample_sheet=samplesheet_meth)
+    df_meth = combine_files_methylation(folder="meth", files=files_meth, sample_sheet=samplesheet_meth, 
+                                        df_map=pd.read_csv(f"{DATA_DIR}/meth_probe_to_TSS_map.tsv", sep="\t"))
+
+    # check how many columns sum to 0
+    print("Number of genes that are always 0:")
+    col_sums = [df_meth[c].sum() for c in df_meth.columns if c not in ["patient_id", "sample_type"]]
+    print(sum([s == 0 for s in col_sums]))  # Output: 6120
+
     print("Saving methylation data...")
     with open(f"{DATA_DIR}/processed/meth.pkl", "wb") as f:
         pickle.dump(df_meth, f)
+
     df_meth_samples = df_meth["patient_id"].copy()
     del df_meth  # Free up memory
-    print(df_meth_samples)
-
-    print(f"Done. Loaded methylation data for {len(df_meth_samples)} samples.")
-    overlap = set(df_meth_samples).intersection(set(df_clinical_index))
-    print(f"And metadata is available for {len(overlap)}/{len(df_meth_samples)} of these samples.")
-    overlap_ge_meth = set(df_ge_samples).intersection(set(df_meth_samples))
-    print(f"Also, the expression data has {len(overlap_ge_meth)} samples in common with the methylation data.")
-    overlap_cnv_meth = set(df_cnv_samples).intersection(set(df_meth_samples))
-    print(f"Also, the CNV data has {len(overlap_cnv_meth)} samples in common with the methylation data.")
-    overlap_all = set(df_ge_samples).intersection(set(df_cnv_samples)).intersection(set(df_meth_samples)).intersection(set(df_clinical_index))
-    print(f"Finally, there are {len(overlap_all)} samples that have data for all three data types, and metadata available.")
-
 
     # TODO: miRNA
     print("\nTODO: miRNA data...")
