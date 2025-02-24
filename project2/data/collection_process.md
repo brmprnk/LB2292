@@ -30,18 +30,51 @@ gdc-client download -m data/manifests/{file}.txt -d data/raw/{data_type}/
 
 ## Data Processing
 
-Using the `process_clinical.py` script, first the individual data types and the clinical metadata are parsed individually, and then they are aligned and combined (TODO).
-
-The resulting individual output files are:
+Using the `process_tcga.py` script, first the individual data types and the clinical metadata are parsed individually (as described in the subsections below). The resulting individual output files are:
 - `data/processed/clinical.csv`
 - `data/processed/cnv.pkl`
 - `data/processed/expression.pkl`
 - `data/processed/meth.pkl`
-- `data/processed/mirna.pkl` (TODO)
+- `data/processed/mirna.pkl`
 
-From these files, there are ... samples that have all the data types available (TODO).
+From these files, there are $9648$ samples that have all the data types available, so we also create subset files for each type of data that only contain these samples. These files are:
+
+- `data/processed/clinical_overlap.csv`
+- `data/processed/cnv_overlap.pkl`
+- `data/processed/expression_overlap.pkl`
+- `data/processed/meth_overlap.pkl`
+- `data/processed/mirna_overlap.pkl`
 
 
-## Things to check
+### Gene expression processing
 
-- Some data is only available for a subset of the samples. How will we handle missing data? Do we drop samples that don't have all the data types available?
+The gene expression data was processed as follows:
+- We used the transcripts per million (TPM) values from the raw downloaded data files.
+- For some gene names, several ENSEMBL IDs were found, so we took the summed value of all values for the same gene name, preserving the TPM totals.
+- Next, we log-transformed the data using the formula $log(TPM+1)$.
+- NOTE: **gene expression data was NOT normalized**, as for some tests we want to know the original mean of the distribution.
+
+### DNA Methylation processing
+
+The DNA methylation data was processed as follows:
+- We used the beta values from the raw downloaded data files.
+- To link the probe IDs to gene names, we used the EPICv2 annotation file.
+- We then took the mean beta value for all probes linked to the same gene. (They were considered linked if the probe was within 2000bp of the gene's transcription start site).
+
+
+### Micro RNA processing
+
+No additional processing was performed.
+
+
+### Copy Number Variation processing
+
+We just used the copy_number column from the raw data. No additional processing was performed.
+
+
+### Clinical Data Processing
+
+The clinical data was processed as follows:
+- We used the XML files to extract the clinical data.
+- Some columns required special processing, these were:
+    - .... TODO
