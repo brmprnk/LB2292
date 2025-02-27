@@ -88,6 +88,9 @@ def combine_files_cnv(folder: str, extension: str, exclude=[], sample_sheet=None
         df = pd.read_csv(f"project2/data/raw/{folder}/{uuid}/{file}", sep="\t")
         df.set_index("gene_id", inplace=True)
 
+        # Drop all duplicate gene_names
+        df = df.drop_duplicates(subset=['gene_name'])
+
         # Explicitly check that gene_id is in the same order for all files
         if gene_id is None:
             gene_id = df.index
@@ -100,7 +103,7 @@ def combine_files_cnv(folder: str, extension: str, exclude=[], sample_sheet=None
 
     # make a df, with the expression values as columns and the rows as samples
     # the index is the sample_id, the columns are the gene_id
-    df = pd.DataFrame(x, columns=gene_id, index=[row[1] for row in rows])
+    df = pd.DataFrame(x, columns=df.index, index=[row[1] for row in rows])
     df.index.name = "sample_id"
     df.insert(0, "patient_id", [row[0] for row in rows])  # Equivalent to bcr_patient_barcode in clinical data
     df.insert(1, "sample_type", [row[2] for row in rows])    
@@ -123,14 +126,14 @@ def combine_files_expression(folder: str, files: list[tuple], sample_sheet: pd.D
         df = df.iloc[4:]
         df.reset_index(inplace=True)
 
-        # group by gene name and sum, as they are not unique
-        df = df.groupby("gene_name").sum()
+        # drop all rows the gene_name is not unique
+        df = df.drop_duplicates(subset=['gene_name'])
             
         rows.append((case_id, sample_id, sample_type, df["tpm_unstranded"].values))  # (TPM = transcripts per million)
 
     # Combine the expression values into a single matrix, and log-normalize with log2(x + 1)
     x = np.array([
-        np.log2(np.array(row[3]) + 1)
+        np.log10(np.array(row[3]) + 1)
         for row in rows
     ])
 
@@ -185,6 +188,7 @@ def combine_files_methylation(folder: str, files: list[tuple], sample_sheet: pd.
     # first, we filter the df_map to only include the probes that are within max_dist of a TSS
     df_map["distToTSS"] = df_map["distToTSS"].astype(int)
     df_map = df_map[df_map["distToTSS"] <= max_dist]
+    df_map = df_map[df_map["distToTSS"] >= 0]  # If it's after the TSS, remove it.
 
     map_probe_to_gene = df_map.set_index("probeID")["geneName"].to_dict()
 
@@ -381,7 +385,7 @@ if __name__ == "__main__":
 
 
     # Clinical data
-    # out_file_clinical = f"{DATA_DIR}/processed/metadata.csv"
+    out_file_clinical = f"{DATA_DIR}/processed/metadata.csv"
     # if os.path.exists(out_file_clinical):
     #     print("Clinical data already processed, loading...")
     #     df_clinical = pd.read_csv(out_file_clinical, low_memory=False)

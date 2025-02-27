@@ -162,4 +162,8 @@ cython_debug/
 .pixi/
 
 ## Project 2 TCGA data
-project2/data/raw
+project2/data/raw/
+project2/data/processed/
+*.exe
+project2/data/*.csv
+project2/data/*.tsv
