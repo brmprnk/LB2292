@@ -5,19 +5,7 @@ import xml.etree.ElementTree as ET
 
 from tqdm import tqdm
 
-
-def get_clinical_files():
-    """
-    Gets all the full paths for the clinical files from the raw data directory.
-    The files are stored in a nested directory structure, so we have to traverse this to get all files.
-    """
-    path = "project2/data/raw/clinical"
-    files = []
-    for uuid in os.listdir(path):
-        for file in os.listdir(os.path.join(path, uuid)):
-            if file.endswith(".xml"):
-                files.append(os.path.join("project2/data/raw/clinical", uuid, file))
-    return files
+from project2.data.process_utils import find_data_files
 
 
 def parse_recursive(root: ET.Element) -> dict:
@@ -519,7 +507,7 @@ def parse_file(file_path: str) -> dict:
     return parsed
 
 
-def parse_clinical(all_columns: bool = False) -> pd.DataFrame:
+def parse_clinical(path: str, all_columns: bool = False) -> pd.DataFrame:
     """
     Parses all clinical files into a single DataFrame.
     Then we filter the columns to get rid of a lot of the mostly-empty ones.
@@ -535,7 +523,7 @@ def parse_clinical(all_columns: bool = False) -> pd.DataFrame:
     Returns:
     pd.DataFrame: The parsed DataFrame.
     """
-    df = pd.DataFrame([parse_file(file) for file in tqdm(get_clinical_files(), desc="Parsing clinical data")])
+    df = pd.DataFrame([parse_file(file) for file in tqdm(find_data_files(path, ext=".xml"), desc="Parsing clinical data")])
 
     # Add new column that combines the treatment outcomes such that we keep the most recent one.
     df['final_treatment_outcome'] = df['follow_up_treatment_success'].combine_first(
@@ -568,13 +556,16 @@ def parse_clinical(all_columns: bool = False) -> pd.DataFrame:
     keep_columns = sorted(list(set(keep_columns)))
     df = df[keep_columns].copy()
 
+    # rename bcr_patient_barcode to patient_id, and set it as the index
+    df = df.rename(columns={"bcr_patient_barcode": "patient_id"})
+    df.set_index("patient_id", inplace=True)
     return df
 
 
 if __name__ == "__main__":
 
     OUT_PATH = "project2/data/processed/clinical_full.csv"
-    df = parse_clinical()
+    df = parse_clinical(path="project2/data/raw/clinical")
     df.to_csv(OUT_PATH, index=False)
 
     print(df)
