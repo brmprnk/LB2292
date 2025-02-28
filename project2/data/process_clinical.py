@@ -5,7 +5,7 @@ import xml.etree.ElementTree as ET
 
 from tqdm import tqdm
 
-from project2.data.process_utils import find_data_files
+from process_utils import find_data_files
 
 
 def parse_recursive(root: ET.Element) -> dict:
@@ -380,12 +380,12 @@ def parse_file(file_path: str) -> dict:
         elif key == "ablations":
             # NOTE: there is a bit more information here about the procedure, but I think only these four are enough
             # The type fields can have several values, so I joined them with a comma for now.
-            _, parsed["ablation_performed_indicator"] = rec_find(child, "ablation_performed_indicator", last=True)
+            _, parsed["ablation_performed_indicator"] = rec_find(child, "ablation_performed_indicator")
             types = rec_find(child, "ablation_type")
             if types is not None and type(types) == list and len(types) > 1:
                 types = ", ".join(types)
             parsed["ablation_type"] = types
-            _, parsed["emolization_performed_indicator"] = rec_find(child, "emolization_performed_indicator", last=True)
+            _, parsed["emolization_performed_indicator"] = rec_find(child, "emolization_performed_indicator")
             types = rec_find(child, "emolization_type")
             if types is not None and type(types) == list and len(types) > 1:
                 types = ", ".join(types)
@@ -393,9 +393,9 @@ def parse_file(file_path: str) -> dict:
             continue
             
         elif key == "neoplasm_dimension":
-            _, parsed["neoplasm_length"] = rec_find(child, "neoplasm_length", last=True)
-            _, parsed["neoplasm_width"] = rec_find(child, "neoplasm_width", last=True)
-            _, parsed["neoplasm_depth"] = rec_find(child, "neoplasm_depth", last=True)
+            _, parsed["neoplasm_length"] = rec_find(child, "neoplasm_length")
+            _, parsed["neoplasm_width"] = rec_find(child, "neoplasm_width")
+            _, parsed["neoplasm_depth"] = rec_find(child, "neoplasm_depth")
             continue        
 
         elif key == "prior_systemic_therapy_types":

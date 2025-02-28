@@ -3,14 +3,14 @@ import os
 import pandas as pd
 
 
-def find_data_files(path: str, extension: str) -> list[str]:
+def find_data_files(path: str, ext: str) -> list[str]:
     """
-    Find all files with the given extension in the given path.
+    Find all files with the given extension `ext` in the given path.
     We also exclude the annotations.txt files here.
 
     Parameters:
     - path (str): The path to search in.
-    - extension (str): The extension of the files to search for.
+    - ext (str): The extension of the files to search for.
 
     Returns:
     - list[str]: A list of the full paths of the files found.
@@ -19,10 +19,11 @@ def find_data_files(path: str, extension: str) -> list[str]:
     for uuid in os.listdir(path):
         uuid_file = None
         for file in os.listdir(os.path.join(path, uuid)):
-            if file.endswith(extension) and not file == "annotations.txt":
-                uuid_file = os.path.join(path, uuid, file)
+            if file.endswith(ext) and not file == "annotations.txt":
+                uuid_file = f"{path}/{uuid}/{file}"
+                break
         if uuid_file is None:
-            print(f"No file with extension {extension} found in {uuid}.")
+            print(f"No file with extension {ext} found in {uuid}.")
         else:
             files.append(uuid_file)
     return files

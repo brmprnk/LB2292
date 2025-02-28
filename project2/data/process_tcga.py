@@ -9,11 +9,11 @@ import numpy as np
 
 from tqdm import tqdm
 
-from project2.data.process_clinical import parse_clinical
-from project2.data.process_utils import find_data_files, load_samplesheet, from_sample_sheet
+from process_clinical import parse_clinical
+from process_utils import find_data_files, load_samplesheet, from_sample_sheet
 
 
-def process_cnv(folder: str, sample_sheet: pd.DataFrame):
+def process_cnv(path: str, sample_sheet: pd.DataFrame):
     """
     Process the CNV data.
     
@@ -25,7 +25,7 @@ def process_cnv(folder: str, sample_sheet: pd.DataFrame):
     - pd.DataFrame: A dataframe with the
     """
     rows = []
-    for file in tqdm(find_data_files(folder, extension="tsv"), desc="Processing CNV data"):
+    for file in tqdm(find_data_files(path, ext="tsv"), desc="Processing CNV data"):
         case_id, sample_id, sample_type = from_sample_sheet(sample_sheet, file)
         case_id = case_id.split(", ")[0]  # All files have 2 samples, one for tumor and one for healthy tissue.
         # The case ID is the same for both, so we only take the first one.
@@ -34,7 +34,7 @@ def process_cnv(folder: str, sample_sheet: pd.DataFrame):
         df = df.drop_duplicates(subset=['gene_name']).set_index("gene_name")  # Drop all duplicate gene_names
         rows.append((case_id, sample_id, sample_type, df["copy_number"].values))
 
-    x = np.array([rows[i][3] for i in range(len(rows))])
+    x = np.array([rows[i][3] for i in range(len(rows))], dtype=np.float16)
 
     df = pd.DataFrame(x, columns=df.index, index=[row[1] for row in rows])
     df.index.name = "sample_id"
@@ -55,7 +55,7 @@ def process_gene_expression(path: str, sample_sheet: pd.DataFrame):
     - pd.DataFrame: A dataframe with the gene expression data.
     """
     rows = []
-    for file in tqdm(find_data_files(path, extension="tsv"), desc="Processing gene expression data"):
+    for file in tqdm(find_data_files(path, ext="tsv"), desc="Processing gene expression data"):
         case_id, sample_id, sample_type  = from_sample_sheet(sample_sheet, file)
         df = pd.read_csv(file, sep="\t", comment="#").iloc[4:]  # Read, skip first 4 rows, they are not needed
         df = df.drop_duplicates(subset=['gene_name'])  # drop all rows the gene_name is not unique (~1300 genes)
@@ -66,6 +66,7 @@ def process_gene_expression(path: str, sample_sheet: pd.DataFrame):
     x = np.array([row[3] for row in rows])
     x = x / x.sum(axis=1)[:, None] * 1e6
     x = np.log10(x + 1)
+    x = x.astype(np.float16)
 
     df = pd.DataFrame(x, columns=df.index, index=[row[1] for row in rows])
     df.index.name = "sample_id"
@@ -140,10 +141,9 @@ def process_methylation(path: str, sample_sheet: pd.DataFrame, df_map: pd.DataFr
 
     # then we make a list of all the unique genes, which we will aggregate the probes over
     genes = df_map["geneName"].unique()
-    print(f"Found {len(genes)} unique genes within {max_dist} bp of a TSS.")
 
     rows = []
-    for file in tqdm(find_data_files(path, extension="txt")):
+    for file in tqdm(find_data_files(path, ext="txt"), desc="Processing methylation data"):
         case_id, sample_id, sample_type = from_sample_sheet(sample_sheet, file)
         df = pd.read_csv(file, sep="\t", header=None, index_col=0)  # (no headers in these files)
 
@@ -159,7 +159,7 @@ def process_methylation(path: str, sample_sheet: pd.DataFrame, df_map: pd.DataFr
 
         rows.append((case_id, sample_id, sample_type, gene_accum_meths))
 
-    x = np.array([np.array(row[3]) for row in rows]).reshape(len(rows), len(genes))
+    x = np.array([np.array(row[3]) for row in rows], dtype=np.float16).reshape(len(rows), len(genes))
 
     df = pd.DataFrame(x, columns=genes, index=[row[1] for row in rows])
     df.index.name = "sample_id"
@@ -181,18 +181,14 @@ def process_mirna_expression(path: str, sample_sheet: pd.DataFrame) -> pd.DataFr
     - pd.DataFrame: A dataframe with the miRNA expression data.
     """
     rows = []
-    for file in tqdm(find_data_files(path, extension="txt")):
-
-        case_id, sample_id, sample_type = \
-            sample_sheet[sample_sheet["File Name"] == file][["Case ID", "Sample ID", "Sample Type"]].values[0]
-
+    for file in tqdm(find_data_files(path, ext="txt"), desc="Processing miRNA expression data"):
+        case_id, sample_id, sample_type = from_sample_sheet(sample_sheet, file)
         df = pd.read_csv(file, sep="\t", comment="#")
-
         rows.append((case_id, sample_id, sample_type, df["reads_per_million_miRNA_mapped"].values))
 
     x = np.array([row[3] for row in rows])
-    # also log-transform the miRNA data
-    x = np.log10(x + 1)
+    x = np.log10(x + 1)  # also log-transform the miRNA data
+    x = x.astype(np.float16)
 
     gene_ids = df["miRNA_ID"]
 
@@ -205,44 +201,52 @@ def process_mirna_expression(path: str, sample_sheet: pd.DataFrame) -> pd.DataFr
 
 if __name__ == "__main__":
     DATA_DIR = "project2/data"
-    PATH_CLINICAL = os.path.join(DATA_DIR, "processed/clinical.csv")
-    PATH_EXPRESSION = os.path.join(DATA_DIR, "processed/expression.pkl")
-    PATH_CNV = os.path.join(DATA_DIR, "processed/cnv.pkl")
-    PATH_METH = os.path.join(DATA_DIR, "processed/meth.pkl")
-    PATH_MIRNA = os.path.join(DATA_DIR, "processed/mirna.pkl")
+    PATH_CLINICAL = f"{DATA_DIR}/processed/clinical.csv"
+    PATH_EXPRESSION = f"{DATA_DIR}/processed/expression.pkl"
+    PATH_CNV = f"{DATA_DIR}/processed/cnv.pkl"
+    PATH_METH = f"{DATA_DIR}/processed/meth.pkl"
+    PATH_MIRNA = f"{DATA_DIR}/processed/mirna.pkl"
 
     # TODO: download data programatically through the GDC API, 
     #   instead of manually collecting manifests and downloading those
 
 
     # Clinical data
-    df_clinical = parse_clinical(os.path.join(DATA_DIR, "raw/clinical"))
+    df_clinical = parse_clinical(f"{DATA_DIR}/raw/clinical")
     df_clinical.to_csv(PATH_CLINICAL.replace(".csv", "_full.csv"), index=False)
-    print(f"Done. Loaded clinical data for {len(df_clinical)} patients.\n")
 
 
     # Expression
     df_ge = process_gene_expression(
-        path=os.path.join(DATA_DIR, "raw/expression"), 
-        sample_sheet=load_samplesheet(filename=f"{DATA_DIR}/manifests/gdc_sample_sheet_tcga_open_expression.tsv")
+        path=f"{DATA_DIR}/raw/expression", 
+        sample_sheet=load_samplesheet(path=f"{DATA_DIR}/manifests/gdc_sample_sheet_tcga_open_expression.tsv")
     )
     with open(PATH_EXPRESSION.replace(".pkl", "_full.pkl"), "wb") as f:
         pickle.dump(df_ge, f)  
     df_ge_samples = df_ge["patient_id"].unique()
     del df_ge  # Free up memory
-    print(f"Done. Loaded expression data for {len(df_ge)} samples.")
     
 
     # CNV
     df_cnv = process_cnv(
-        path=os.path.join(f"{DATA_DIR}/raw/cnv"),
-        sample_sheet=load_samplesheet(filename=f"{DATA_DIR}/manifests/gdc_sample_sheet_tcga_open_gene-level-cn_ascat3.tsv")
+        path=f"{DATA_DIR}/raw/cnv",
+        sample_sheet=load_samplesheet(path=f"{DATA_DIR}/manifests/gdc_sample_sheet_tcga_open_gene-level-cn_ascat3.tsv")
     )
     with open(PATH_CNV.replace(".pkl", "_full.pkl"), "wb") as f:
         pickle.dump(df_cnv, f)
     df_cnv_samples = df_cnv["patient_id"].unique()
     del df_cnv  # Free up memory
-    print(f"Done. Loaded CNV data for {len(df_cnv)} samples.")
+
+
+    # miRNA
+    df_mirna = process_mirna_expression(
+        path=f"{DATA_DIR}/raw/mirna", 
+        sample_sheet=load_samplesheet(path=f"{DATA_DIR}/manifests/gdc_sample_sheet_tcga_open_mirna.tsv"),
+    )
+    with open(PATH_MIRNA.replace(".pkl", "_full.pkl"), "wb") as f:
+        pickle.dump(df_mirna, f)
+    df_mirna_samples = df_mirna["patient_id"].copy()
+    del df_mirna  # Free up memory
 
 
     # Methylation
@@ -251,7 +255,7 @@ if __name__ == "__main__":
         get_methylation_annotations().to_csv(ANNOTATIONS_PATH, sep="\t")
     df_meth = process_methylation(
         path=f"{DATA_DIR}/raw/meth", 
-        sample_sheet=load_samplesheet(filename=f"{DATA_DIR}/manifests/gdc_sample_sheet_tcga_open_meth.tsv"), 
+        sample_sheet=load_samplesheet(path=f"{DATA_DIR}/manifests/gdc_sample_sheet_tcga_open_meth.tsv"), 
         df_map=pd.read_csv(ANNOTATIONS_PATH, sep="\t"),
         max_dist=2000,
     )
@@ -259,17 +263,6 @@ if __name__ == "__main__":
         pickle.dump(df_meth, f)
     df_meth_samples = df_meth["patient_id"].copy()
     del df_meth  # Free up memory
-
-
-    # miRNA
-    df_mirna = process_mirna_expression(
-        path=f"{DATA_DIR}/raw/mirna", 
-        sample_sheet=load_samplesheet(filename=f"{DATA_DIR}/manifests/gdc_sample_sheet_tcga_open_mirna.tsv"),
-    )
-    with open(PATH_MIRNA.replace(".pkl", "_full.pkl"), "wb") as f:
-        pickle.dump(df_mirna, f)
-    df_mirna_samples = df_mirna["patient_id"].copy()
-    del df_mirna  # Free up memory
 
 
     # Now we get for each data type the samples that are present in all data types
@@ -280,7 +273,7 @@ if __name__ == "__main__":
     print(f"\nFound {len(samples)} samples that are present in all data types.")
 
     # Now we filter the dataframes to only include these samples
-    df_clinical = df_clinical[df_clinical["bcr_patient_barcode"].isin(samples)]
+    df_clinical = df_clinical[df_clinical.index.isin(samples)]
     df_clinical.to_csv(PATH_CLINICAL, index=False)
     df_ge = pd.read_pickle(PATH_EXPRESSION.replace(".pkl", "_full.pkl"))
     df_ge = df_ge[df_ge["patient_id"].isin(samples)]
