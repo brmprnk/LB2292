@@ -302,6 +302,8 @@ if __name__ == "__main__":
 
     df_cnv = pd.read_pickle(PATH_CNV.replace(".pkl", "_full.pkl"))
     df_cnv = df_cnv[df_cnv["patient_id"].isin(samples)]
+    # Drop all columsn that are fully NaN
+    df_cnv = df_cnv.dropna(axis=1, how="all")
     with open(PATH_CNV, "wb") as f:
         pickle.dump(df_cnv, f)
     del df_cnv
