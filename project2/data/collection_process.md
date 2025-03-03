@@ -30,20 +30,20 @@ gdc-client download -m data/manifests/{file}.txt -d data/raw/{data_type}/
 
 ## Data Processing
 
-Using the `process_tcga.py` script, first the individual data types and the clinical metadata are parsed individually (as described in the subsections below). The resulting individual output files are:
+Using the `process_tcga.py` script (make sure to correctly fill out the paths to the data folders and sample sheets), first the individual data types and the clinical metadata are parsed individually (as described in the subsections below). The resulting individual output files are:
+- `data/processed/clinical_full.csv`
+- `data/processed/cnv_full.pkl`
+- `data/processed/expression_full.pkl`
+- `data/processed/meth_full.pkl`
+- `data/processed/mirna_full.pkl`
+
+From these files, there are $9648$ samples that have all the data types available, so we also create subset files for each type of data that only contain these samples. These files are:
+
 - `data/processed/clinical.csv`
 - `data/processed/cnv.pkl`
 - `data/processed/expression.pkl`
 - `data/processed/meth.pkl`
 - `data/processed/mirna.pkl`
-
-From these files, there are $9648$ samples that have all the data types available, so we also create subset files for each type of data that only contain these samples. These files are:
-
-- `data/processed/clinical_overlap.csv`
-- `data/processed/cnv_overlap.pkl`
-- `data/processed/expression_overlap.pkl`
-- `data/processed/meth_overlap.pkl`
-- `data/processed/mirna_overlap.pkl`
 
 
 ### Gene expression processing
@@ -64,8 +64,7 @@ The DNA methylation data was processed as follows:
 
 ### Micro RNA processing
 
-No additional processing was performed.
-
+Similar to gene expression, the miRNA data was normalized to 1 million counts per sample (CPM), and log-transformed, but not standardized.
 
 ### Copy Number Variation processing
 
@@ -74,7 +73,4 @@ We just used the copy_number column from the raw data. No additional processing 
 
 ### Clinical Data Processing
 
-The clinical data was processed as follows:
-- We used the XML files to extract the clinical data.
-- Some columns required special processing, these were:
-    - .... TODO
+The clinical data was processed by parsing each of the XML files separately, and finally combining them into a single pandas dataframe. The parsing of the XML files is implemented in `process_clinical.py`, and this file also includes extensive documentation for the decisions made for each field in the XML file.
