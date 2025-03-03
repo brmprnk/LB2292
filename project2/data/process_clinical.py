@@ -557,8 +557,9 @@ def parse_clinical(path: str, all_columns: bool = False) -> pd.DataFrame:
     df = df[keep_columns].copy()
 
     # rename bcr_patient_barcode to patient_id, and set it as the index
-    df = df.rename(columns={"bcr_patient_barcode": "patient_id"})
-    df.set_index("patient_id", inplace=True)
+    df["patient_id"] = df["bcr_patient_barcode"]
+    df.set_index("bcr_patient_barcode", inplace=True)
+
     return df
 
 

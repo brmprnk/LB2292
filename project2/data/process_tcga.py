@@ -26,20 +26,19 @@ def process_cnv(path: str, sample_sheet: pd.DataFrame):
     """
     rows = []
     for file in tqdm(find_data_files(path, ext="tsv"), desc="Processing CNV data"):
-        case_id, sample_id, sample_type = from_sample_sheet(sample_sheet, file)
+        case_id, _, _ = from_sample_sheet(sample_sheet, file)
         case_id = case_id.split(", ")[0]  # All files have 2 samples, one for tumor and one for healthy tissue.
         # The case ID is the same for both, so we only take the first one.
 
         df = pd.read_csv(file, sep="\t", comment="#").set_index("gene_id")
         df = df.drop_duplicates(subset=['gene_name']).set_index("gene_name")  # Drop all duplicate gene_names
-        rows.append((case_id, sample_id, sample_type, df["copy_number"].values))
+        rows.append((case_id, df["copy_number"].values))
 
-    x = np.array([rows[i][3] for i in range(len(rows))], dtype=np.float16)
+    x = np.array([rows[i][1] for i in range(len(rows))], dtype=np.float16)
 
-    df = pd.DataFrame(x, columns=df.index, index=[row[1] for row in rows])
-    df.index.name = "sample_id"
-    df.insert(0, "patient_id", [row[0] for row in rows])  # Equivalent to bcr_patient_barcode in clinical data
-    df.insert(1, "sample_type", [row[2] for row in rows])    
+    df = pd.DataFrame(x, columns=df.index, index=[row[0] for row in rows])
+    df.insert(0, "patient_id", df.index)  # Same as the index (but as a column)
+    df.index.name = "patient_id"
     return df
 
 
@@ -154,7 +153,7 @@ def process_methylation(path: str, sample_sheet: pd.DataFrame, df_map: pd.DataFr
 
         # presort by geneName, so we can group by geneName (and fill in missing genes with 0s)
         df_filtered.sort_values("geneName", inplace=True)
-        df_accum = df_filtered.groupby("geneName").sum()
+        df_accum = df_filtered.groupby("geneName").mean()
         gene_accum_meths = df_accum.reindex(genes).fillna(0).values
 
         rows.append((case_id, sample_id, sample_type, gene_accum_meths))
@@ -212,39 +211,54 @@ if __name__ == "__main__":
 
 
     # Clinical data
-    df_clinical = parse_clinical(f"{DATA_DIR}/raw/clinical")
-    df_clinical.to_csv(PATH_CLINICAL.replace(".csv", "_full.csv"), index=False)
-
+    if not os.path.exists(PATH_CLINICAL.replace(".csv", "_full.csv")):
+        df_clinical = parse_clinical(f"{DATA_DIR}/raw/clinical")
+        df_clinical.to_csv(PATH_CLINICAL.replace(".csv", "_full.csv"), index=True)
+    else:
+        df_clinical = pd.read_csv(PATH_CLINICAL.replace(".csv", "_full.csv"), index_col=0)
+        print("Loaded clinical data from file. Shape:", df_clinical.shape)
 
     # Expression
-    df_ge = process_gene_expression(
-        path=f"{DATA_DIR}/raw/expression", 
-        sample_sheet=load_samplesheet(path=f"{DATA_DIR}/manifests/gdc_sample_sheet_tcga_open_expression.tsv")
-    )
-    with open(PATH_EXPRESSION.replace(".pkl", "_full.pkl"), "wb") as f:
-        pickle.dump(df_ge, f)  
+    if not os.path.exists(PATH_EXPRESSION.replace(".pkl", "_full.pkl")):
+        df_ge = process_gene_expression(
+            path=f"{DATA_DIR}/raw/expression", 
+            sample_sheet=load_samplesheet(path=f"{DATA_DIR}/manifests/gdc_sample_sheet_tcga_open_expression.tsv")
+        )
+        with open(PATH_EXPRESSION.replace(".pkl", "_full.pkl"), "wb") as f:
+            pickle.dump(df_ge, f)
+    else:
+        df_ge = pd.read_pickle(PATH_EXPRESSION.replace(".pkl", "_full.pkl"))
+        print("Loaded gene expression data from file. Shape:", df_ge.shape)
     df_ge_samples = df_ge["patient_id"].unique()
     del df_ge  # Free up memory
     
 
     # CNV
-    df_cnv = process_cnv(
-        path=f"{DATA_DIR}/raw/cnv",
-        sample_sheet=load_samplesheet(path=f"{DATA_DIR}/manifests/gdc_sample_sheet_tcga_open_gene-level-cn_ascat3.tsv")
-    )
-    with open(PATH_CNV.replace(".pkl", "_full.pkl"), "wb") as f:
-        pickle.dump(df_cnv, f)
+    if not os.path.exists(PATH_CNV.replace(".pkl", "_full.pkl")):
+        df_cnv = process_cnv(
+            path=f"{DATA_DIR}/raw/cnv",
+            sample_sheet=load_samplesheet(path=f"{DATA_DIR}/manifests/gdc_sample_sheet_tcga_open_gene-level-cn_ascat3.tsv")
+        )
+        with open(PATH_CNV.replace(".pkl", "_full.pkl"), "wb") as f:
+            pickle.dump(df_cnv, f)
+    else:
+        df_cnv = pd.read_pickle(PATH_CNV.replace(".pkl", "_full.pkl"))
+        print("Loaded CNV data from file. Shape:", df_cnv.shape)
     df_cnv_samples = df_cnv["patient_id"].unique()
     del df_cnv  # Free up memory
 
 
     # miRNA
-    df_mirna = process_mirna_expression(
-        path=f"{DATA_DIR}/raw/mirna", 
-        sample_sheet=load_samplesheet(path=f"{DATA_DIR}/manifests/gdc_sample_sheet_tcga_open_mirna.tsv"),
-    )
-    with open(PATH_MIRNA.replace(".pkl", "_full.pkl"), "wb") as f:
-        pickle.dump(df_mirna, f)
+    if not os.path.exists(PATH_MIRNA.replace(".pkl", "_full.pkl")):    
+        df_mirna = process_mirna_expression(
+            path=f"{DATA_DIR}/raw/mirna", 
+            sample_sheet=load_samplesheet(path=f"{DATA_DIR}/manifests/gdc_sample_sheet_tcga_open_mirna.tsv"),
+        )
+        with open(PATH_MIRNA.replace(".pkl", "_full.pkl"), "wb") as f:
+            pickle.dump(df_mirna, f)
+    else:
+        df_mirna = pd.read_pickle(PATH_MIRNA.replace(".pkl", "_full.pkl"))
+        print("Loaded miRNA data from file. Shape:", df_mirna.shape)
     df_mirna_samples = df_mirna["patient_id"].copy()
     del df_mirna  # Free up memory
 
@@ -253,41 +267,53 @@ if __name__ == "__main__":
     ANNOTATIONS_PATH = f"{DATA_DIR}/meth_probe_to_TSS_map.tsv"
     if not os.path.exists(ANNOTATIONS_PATH):
         get_methylation_annotations().to_csv(ANNOTATIONS_PATH, sep="\t")
-    df_meth = process_methylation(
-        path=f"{DATA_DIR}/raw/meth", 
-        sample_sheet=load_samplesheet(path=f"{DATA_DIR}/manifests/gdc_sample_sheet_tcga_open_meth.tsv"), 
-        df_map=pd.read_csv(ANNOTATIONS_PATH, sep="\t"),
-        max_dist=2000,
-    )
-    with open(PATH_METH.replace(".pkl", "_full.pkl"), "wb") as f:
-        pickle.dump(df_meth, f)
+    if not os.path.exists(PATH_METH.replace(".pkl", "_full.pkl")):
+        df_meth = process_methylation(
+            path=f"{DATA_DIR}/raw/meth", 
+            sample_sheet=load_samplesheet(path=f"{DATA_DIR}/manifests/gdc_sample_sheet_tcga_open_meth.tsv"), 
+            df_map=pd.read_csv(ANNOTATIONS_PATH, sep="\t"),
+            max_dist=2000,
+        )
+        with open(PATH_METH.replace(".pkl", "_full.pkl"), "wb") as f:
+            pickle.dump(df_meth, f)
+    else:
+        df_meth = pd.read_pickle(PATH_METH.replace(".pkl", "_full.pkl"))
+        print("Loaded methylation data from file. Shape:", df_meth.shape)
     df_meth_samples = df_meth["patient_id"].copy()
     del df_meth  # Free up memory
 
 
     # Now we get for each data type the samples that are present in all data types
-    samples_list = [df_ge_samples, df_cnv_samples, df_meth_samples, df_mirna_samples, df_clinical.index]
-    samples = set(samples_list[0])
-    for s in samples_list[1:]:
+    samples_lists = [df_ge_samples, df_cnv_samples, df_meth_samples, df_mirna_samples, df_clinical.index]
+    samples = set(samples_lists[0])
+    for s in samples_lists[1:]:
         samples = samples.intersection(set(s))
     print(f"\nFound {len(samples)} samples that are present in all data types.")
 
     # Now we filter the dataframes to only include these samples
     df_clinical = df_clinical[df_clinical.index.isin(samples)]
-    df_clinical.to_csv(PATH_CLINICAL, index=False)
+    df_clinical.to_csv(PATH_CLINICAL, index=True)
+    
     df_ge = pd.read_pickle(PATH_EXPRESSION.replace(".pkl", "_full.pkl"))
     df_ge = df_ge[df_ge["patient_id"].isin(samples)]
-    df_ge.to_pickle(PATH_EXPRESSION)
+    with open(PATH_EXPRESSION, "wb") as f:
+        pickle.dump(df_ge, f)
     del df_ge
+
     df_cnv = pd.read_pickle(PATH_CNV.replace(".pkl", "_full.pkl"))
     df_cnv = df_cnv[df_cnv["patient_id"].isin(samples)]
-    df_cnv.to_pickle(PATH_CNV)
+    with open(PATH_CNV, "wb") as f:
+        pickle.dump(df_cnv, f)
     del df_cnv
+
     df_meth = pd.read_pickle(PATH_METH.replace(".pkl", "_full.pkl"))
     df_meth = df_meth[df_meth["patient_id"].isin(samples)]
-    df_meth.to_pickle(PATH_METH)
+    with open(PATH_METH, "wb") as f:
+        pickle.dump(df_meth, f)
     del df_meth
+
     df_mirna = pd.read_pickle(PATH_MIRNA.replace(".pkl", "_full.pkl"))
     df_mirna = df_mirna[df_mirna["patient_id"].isin(samples)]
-    df_mirna.to_pickle(PATH_MIRNA)
+    with open(PATH_MIRNA, "wb") as f:
+        pickle.dump(df_mirna, f)
     del df_mirna
